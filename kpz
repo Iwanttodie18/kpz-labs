@@ -1,0 +1,674 @@
+1.2
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Models
+{
+    public class Product
+    {
+       
+       public int Id { get; set; }
+
+       [Required]
+       public string Name { get; set; }
+
+       public string Description { get; set; }
+
+       public int Weight { get; set; }
+
+       [Required]
+       [Range(0, 100)]
+       public double Proteins { get; set; }
+
+       [Required]
+       [Range(0, 100)]
+       public double Fat { get; set; }
+
+       [Required]
+       [Range(0, 100)]
+       public double Carbohydrates { get; set; }
+
+       [Required]
+       [Range(0,100)]
+       public double Calories { get; set; }
+
+       [ScaffoldColumn(false)]
+       public int Count { get; set; }
+
+       [ScaffoldColumn(false)]
+       public double Price { get; set; }
+
+       [ScaffoldColumn(false)]
+       public bool Top { get; set; }
+
+       [ScaffoldColumn(false)]
+       public bool New { get; set; }
+       
+    }
+}
+Інтерфейс IProductService
+using Lab2.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Interfaces
+{
+    public interface IProductService
+    {
+        void Create(Product product);
+        Task<Product> GetProduct(int? id);
+        Task<IEnumerable<Product>> GetProductAll();
+        void Edit(Product product);
+    }
+}
+
+Клас ProductService
+using Lab2.Data;
+using Lab2.Interfaces;
+using Lab2.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Services
+{
+    public class ProductService : IProductService
+    {
+       private ApplicationDbContext db;
+
+        public ProductService(ApplicationDbContext db)
+        {
+            this.db = db;
+        }
+        public  void Create(Product product)
+        {
+             db.Products.Add(product);
+             db.SaveChanges();
+        }
+
+        [Authorize(Roles ="Admin")]
+        public  void Edit(Product prod)
+        {
+            db.Products.Update(prod);
+            db.SaveChanges();
+        }
+
+        public async Task<Product> GetProduct(int? id)
+        {
+            Product product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
+            return product;
+            
+        }
+
+        public async Task<IEnumerable<Product>> GetProductAll()
+        {
+            IEnumerable<Product> products = await db.Products.ToListAsync();
+            return products;
+        }
+    }
+}
+
+Controllers(ProductControllers)
+Клас ProductController
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Lab2.Data;
+using Lab2.Extensions;
+using Lab2.Interfaces;
+using Lab2.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Session;
+
+namespace Lab2.Controllers
+{
+    [Authorize]
+    public class ProductController : Controller
+    {
+        
+        IProductService service;
+
+        public ProductController(IProductService service)
+        {
+            this.service = service;
+        }
+
+               [HttpPost]
+        public void Create([FromBody]Product product)
+        {
+            if (User.Identity.Name == "Dima")
+            {
+                if (product != null)
+                    service.Create(product);
+            }
+        }
+
+        public IActionResult Create()
+        {
+            if (User.Identity.Name == "Dima")
+                return View();
+            return NotFound();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetProduct(int? id)
+        {
+            if (id != null)
+            {
+                Product product = await service.GetProduct(id);
+                if (product != null)
+                    return View(product);
+            }
+                return NotFound();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetProductAll()
+        {
+            IEnumerable<Product> products = await service.GetProductAll();
+                if (products != null)
+                    return View(products);
+
+            return NotFound();                       
+        }
+
+        
+        [HttpPost]
+        public void Edit(Product product)
+        {
+            if (User.Identity.Name == "Dima")
+            {
+                if (ModelState.IsValid)
+                    service.Edit(product);
+            }
+        }
+
+        
+        public IActionResult Edit(int id)
+        {
+            if (User.Identity.Name == "Dima")
+            {
+                Product product = service.GetProduct(id).Result;
+                if (product != null)
+                    return View(product);
+                return NotFound();
+            }
+            return NotFound();
+        }
+
+        public IActionResult ToKitchenController()
+        {
+            HttpContext.Session.Set("ListOfProducts", service.GetProductAll().Result);
+         
+            return RedirectToAction("Create", "Kitchen");
+        }
+       
+
+    }
+}
+
+1.3
+В класі ProductService додано логування і обробка помилок.
+using Lab2.Data;
+using Lab2.Interfaces;
+using Lab2.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Services
+{
+    public class ProductService : IProductService
+    {
+        private ApplicationDbContext db;
+        private readonly ILogger _logger;
+
+        public ProductService(ApplicationDbContext db,ILogger<ProductService> logger)
+        {
+            this.db = db;
+            _logger = logger;
+        }
+        public  void Create(Product product)
+        {
+            try
+            {
+                db.Products.Add(product);
+                db.SaveChanges();
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                
+            }
+        }
+
+        
+        public  void Edit(Product prod)
+        {
+            try
+            {
+                db.Products.Update(prod);
+                db.SaveChanges();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                
+            }
+        }
+
+        public async Task<Product> GetProduct(int? id)
+        {
+            try
+            {
+                Product product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
+                return product;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return null;
+            }
+        }
+
+        public async Task<IEnumerable<Product>> GetProductAll()
+        {
+            try
+            {
+                IEnumerable<Product> products = await db.Products.ToListAsync();
+                return products;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex.Message);
+                return null;
+            }
+        }
+    }
+}
+
+В клас ProductController додано логування
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Lab2.Data;
+using Lab2.Extensions;
+using Lab2.Interfaces;
+using Lab2.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Session;
+using Microsoft.Extensions.Logging;
+
+namespace Lab2.Controllers
+{
+    public class ProductController : Controller
+    {
+        
+        IProductService service;
+        readonly ILogger _logger;
+        public ProductController(IProductService service,ILogger<ProductController> logger)
+        {
+            this.service = service;
+            _logger = logger;
+        }
+
+      
+        [HttpPost]
+        public  void Create([FromBody]Product product)
+        {
+            _logger.LogError("Log in ProductController: Method Create ");
+            if (product != null)
+                service.Create(product);
+        }
+
+        public IActionResult Create()
+        {
+            return View();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetProduct(int? id)
+        {
+            _logger.LogError("Log in ProductController: Method GetProduct ");
+            if (id != null)
+            {
+                Product product = await service.GetProduct(id);
+                if (product != null)
+                    return View(product);
+            }
+                return NotFound();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetProductAll()
+        {
+            _logger.LogError("Log in ProductController: Method GetProductAll ");
+            IEnumerable<Product> products = await service.GetProductAll();
+                if (products != null)
+                    return View(products);
+
+            return NotFound();                       
+        }
+
+        
+        [HttpPost]
+        public void Edit([FromBody]Product product)
+        {
+            if (ModelState.IsValid)
+                service.Edit(product);
+        }
+
+        
+        public IActionResult Edit(int id)
+        {
+            _logger.LogError("Log in ProductController: Method Edit ");
+            Product product = service.GetProduct(id).Result;
+            if (product != null)
+                return View(product);
+            return NotFound();
+        }
+
+        public IActionResult ToKitchenController()
+        {
+            HttpContext.Session.Set("ListOfProducts", service.GetProductAll().Result);
+            return RedirectToAction("Create", "Kitchen");
+        }
+       
+
+    }
+}
+
+Клас провайдера логування(протоколювання)
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Logger
+{
+    public class FileLoggerProvider : ILoggerProvider
+    {
+        private readonly string path;
+        public FileLoggerProvider(string _path)
+        {
+            path = _path;
+        }
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new FileLogger(path);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+}
+
+Клас який додає до об'єкту ILoggerFactory метод розширення AddFile
+using Lab2.Logger;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Extensions
+{
+    public static class FileLoggerExtensions
+    {
+        public static ILoggerFactory AddFile(this ILoggerFactory factory, string filePath)
+        {
+            factory.AddProvider(new FileLoggerProvider(filePath));
+            return factory;
+        }
+    }
+}
+Використання провайдеру в класі Startup
+public void Configure(IApplicationBuilder app, IHostingEnvironment env,ILoggerFactory loggerFactory)
+{
+//..
+loggerFactory.AddFile(Path.Combine(Directory.GetCurrentDirectory(), "logger.txt"));
+
+var logger = loggerFactory.CreateLogger("FileLogger");
+//..
+}
+2.1
+Клас ApplicationDbContext
+public class ApplicationDbContext : IdentityDbContext<User>
+    {
+        public DbSet<Product> Products { get; set; }
+        public DbSet<Dish> Dishes { get; set; }
+        public DbSet<Order> Orders { get; set; }
+        public DbSet<CartItem> CartItems { get; set; }
+        public DbSet<OrderDetails> OrderDetails { get; set; }
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options)
+        {
+        }
+    }
+Клас Product
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Models
+{
+    public class Product
+    {
+       
+       public int Id { get; set; }
+
+       [Required]
+       public string Name { get; set; }
+
+       public string Description { get; set; }
+
+       public int Weight { get; set; }
+
+       [Required]
+       [Range(0, 100)]
+       public double Proteins { get; set; }
+
+       [Required]
+       [Range(0, 100)]
+       public double Fat { get; set; }
+
+       [Required]
+       [Range(0, 100)]
+       public double Carbohydrates { get; set; }
+
+       [Required]
+       [Range(0,100)]
+       public double Calories { get; set; }
+
+       [ScaffoldColumn(false)]
+       public int Count { get; set; }
+
+       [ScaffoldColumn(false)]
+       public double Price { get; set; }
+
+       [ScaffoldColumn(false)]
+       public bool Top { get; set; }
+
+       [ScaffoldColumn(false)]
+       public bool New { get; set; }
+       
+    }
+}
+Інтерфейс IProductService
+using Lab2.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Interfaces
+{
+    public interface IProductService
+    {
+        void Create(Product product);
+        Task<Product> GetProduct(int? id);
+        Task<IEnumerable<Product>> GetProductAll();
+        void Edit(Product product);
+    }
+}
+Клас ProductService
+using Lab2.Data;
+using Lab2.Interfaces;
+using Lab2.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Lab2.Services
+{
+    public class ProductService : IProductService
+    {
+       private ApplicationDbContext db;
+
+        public ProductService(ApplicationDbContext db)
+        {
+            this.db = db;
+        }
+        public  void Create(Product product)
+        {
+             db.Products.Add(product);
+             db.SaveChanges();
+        }
+
+        [Authorize(Roles ="Admin")]
+        public  void Edit(Product prod)
+        {
+            db.Products.Update(prod);
+            db.SaveChanges();
+        }
+
+        public async Task<Product> GetProduct(int? id)
+        {
+            Product product = await db.Products.FirstOrDefaultAsync(p => p.Id == id);
+            return product;
+            
+        }
+
+        public async Task<IEnumerable<Product>> GetProductAll()
+        {
+            IEnumerable<Product> products = await db.Products.ToListAsync();
+            return products;
+        }
+    }
+}
+Клас ProductController
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Lab2.Data;
+using Lab2.Extensions;
+using Lab2.Interfaces;
+using Lab2.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Session;
+
+namespace Lab2.Controllers
+{
+    [Authorize]
+    public class ProductController : Controller
+    {
+        IProductService service;
+
+        public ProductController(IProductService service)
+        {
+            this.service = service;
+        }
+               [HttpPost]
+        public void Create([FromBody]Product product)
+        {
+            if (User.Identity.Name == "Dima")
+            {
+                if (product != null)
+                    service.Create(product);
+            }
+        }
+
+        public IActionResult Create()
+        {
+            if (User.Identity.Name == "Dima")
+                return View();
+            return NotFound();
+        }
+        [HttpGet]
+        public async Task<IActionResult> GetProduct(int? id)
+        {
+            if (id != null)
+            {
+                Product product = await service.GetProduct(id);
+                if (product != null)
+                    return View(product);
+            }
+                return NotFound();
+        }
+        [HttpGet]
+        public async Task<IActionResult> GetProductAll()
+        {
+            IEnumerable<Product> products = await service.GetProductAll();
+                if (products != null)
+                    return View(products);
+            return NotFound();                       
+        }
+        [HttpPost]
+        public void Edit(Product product)
+        {
+            if (User.Identity.Name == "Dima")
+            {
+                if (ModelState.IsValid)
+                    service.Edit(product);
+            }
+        }      
+        public IActionResult Edit(int id)
+        {
+            if (User.Identity.Name == "Dima")
+            {
+                Product product = service.GetProduct(id).Result;
+                if (product != null)
+                    return View(product);
+                return NotFound();
+            }
+            return NotFound();
+        }
+
+        public IActionResult ToKitchenController()
+        {
+            HttpContext.Session.Set("ListOfProducts", service.GetProductAll().Result);
+         
+            return RedirectToAction("Create", "Kitchen");
+        }
+    }
